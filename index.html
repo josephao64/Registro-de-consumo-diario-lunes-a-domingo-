@@ -117,7 +117,7 @@
         <div class="modal-body">
           <label for="inputPass" class="form-label">Contraseña</label>
           <input type="password" id="inputPass" class="form-control" placeholder="Ingrese la contraseña" />
-          <div class="form-text">Escriba la contraseña para ver los registros guardados.</div>
+          <div class="form-text">Escriba <strong>VP123</strong> para ver los registros guardados.</div>
           <div class="text-danger small mt-2 d-none" id="passError">Contraseña incorrecta.</div>
         </div>
         <div class="modal-footer">
@@ -143,9 +143,7 @@
     </div>
   </div>
 
-</div>
-
-<!-- Cargar primero Bootstrap JS para que la variable global `bootstrap` exista -->
+<!-- Cargar primero Bootstrap JS para que `bootstrap` exista -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 // ====== Catálogo base (según tu inventario preferido) ======
@@ -174,7 +172,7 @@ const weekStart = document.getElementById('weekStart');
 const weekLabel = document.getElementById('weekLabel');
 const form = document.getElementById('consumptionForm');
 
-// ====== Render de filas ======
+// ====== Render de filas de captura ======
 function renderRows() {
   tbody.innerHTML = '';
   ITEMS.forEach((it) => {
@@ -281,7 +279,7 @@ function collectPayload() {
   return payload;
 }
 
-// ====== Utilidades de almacenamiento & acceso ======
+// ====== Utilidades de almacenamiento & acceso (localStorage) ======
 const PASSWORD = 'VP123';
 const STORAGE_KEY = 'consumos_semanales';
 
@@ -358,7 +356,7 @@ function buildDetailTableHTML(rec){
   let tbodyHtml = '<tbody>';
   let grand = 0;
   ITEMS.forEach(it=>{
-    const d = rec.items?.[it.k]?.daily || {lun:0,mar:0,mie:0,jue:0,vie:0,sab:0,dom:0};
+    const d = (rec.items && rec.items[it.k] && rec.items[it.k].daily) ? rec.items[it.k].daily : {lun:0,mar:0,mie:0,jue:0,vie:0,sab:0,dom:0};
     const rowTotal = (d.lun||0)+(d.mar||0)+(d.mie||0)+(d.jue||0)+(d.vie||0)+(d.sab||0)+(d.dom||0);
     grand += rowTotal;
     tbodyHtml += `
@@ -386,18 +384,8 @@ function buildDetailTableHTML(rec){
   return header + `<div class="table-responsive"><table class="table table-sm align-middle">${thead}${tbodyHtml}${tfoot}</table></div>`;
 }
 
-// ====== Utilidades ======
-function setDefaultMonday(){
-  if (weekStart.value) return;
-  const today = new Date();
-  const day = today.getDay(); // 0 dom - 6 sab
-  const diff = (day === 0 ? -6 : 1 - day); // mover a lunes
-  const monday = new Date(today);
-  monday.setDate(today.getDate() + diff);
-  weekStart.value = monday.toISOString().slice(0,10);
-}
 
-// ====== Eventos ======
+// ===== Eventos =====
 weekStart.addEventListener('change', () => { updateWeekLabel(); });
 
 document.getElementById('btnClear').addEventListener('click', () => {
@@ -417,7 +405,6 @@ form.addEventListener('submit', (e) => {
   saveRecord(payload);
   calcGrandTotal();
   alert('Semana guardada');
-  // si está visible, refrescar
   if (document.getElementById('recordsCard').style.display !== 'none') {
     renderRecords();
   }
@@ -448,10 +435,61 @@ document.getElementById('btnHideRecords').addEventListener('click', ()=>{
   document.getElementById('recordsCard').style.display='none';
 });
 
+
+// ===== Utilidad: setear lunes por defecto =====
+function setDefaultMonday(){
+  if (weekStart.value) return;
+  const today = new Date();
+  const day = today.getDay(); // 0 dom - 6 sab
+  const diff = (day === 0 ? -6 : 1 - day); // mover a lunes
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + diff);
+  weekStart.value = monday.toISOString().slice(0,10);
+  updateWeekLabel();
+}
+
 // Init
 renderRows();
 setDefaultMonday();
 updateWeekLabel();
+</script>
+
+<!-- Persistencia en Firestore (agregado sin modificar el código existente) -->
+<script type="module">
+  // SDKs Firebase v9 (modular)
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js';
+  import { getFirestore, collection, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js';
+
+  // Configuración de tu proyecto
+  const firebaseConfig = {
+    apiKey: "AIzaSyDrgMmtjCTNtVRdv2uO-_T6YGWABfvXxoo",
+    authDomain: "formm-4e355.firebaseapp.com",
+    projectId: "formm-4e355",
+    storageBucket: "formm-4e355.firebasestorage.app",
+    messagingSenderId: "523001700745",
+    appId: "1:523001700745:web:a966cdd10a2929d12cc158"
+  };
+
+  // Inicializar Firebase y Firestore
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // Hook al submit ya existente (no altera tu UX)
+  const form = document.getElementById('consumptionForm');
+  form.addEventListener('submit', async (e) => {
+    try {
+      const payload = window.collectPayload();
+      const weekDates = window.getWeekDatesFromMonday(payload.week_start);
+      payload.week_end = weekDates[6];
+      payload.saved_at = new Date().toISOString();
+
+      const docData = { ...payload, created_at: serverTimestamp(), source: 'web-consumo-diario' };
+      await addDoc(collection(db, 'consumos_semanales'), docData);
+      console.log('[Firestore] Registro guardado en "consumos_semanales"');
+    } catch (err) {
+      console.error('[Firestore] Error al guardar:', err);
+    }
+  });
 </script>
 </body>
 </html>
